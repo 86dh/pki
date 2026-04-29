@@ -62,6 +62,7 @@ import org.mozilla.jss.util.Password;
 
 import com.netscape.certsrv.base.EBaseException;
 import com.netscape.certsrv.base.SessionContext;
+import com.netscape.certsrv.dbs.keydb.KeyId;
 import com.netscape.certsrv.kra.EKRAException;
 import com.netscape.certsrv.logging.AuditFormat;
 import com.netscape.certsrv.request.IService;
@@ -137,6 +138,8 @@ public class RecoveryService implements IService {
     @Override
     public boolean serviceRequest(Request request) throws EBaseException {
 
+        logger.info("RecoveryService: Processing recovery request");
+
         CryptoManager cm = null;
         KRAEngineConfig config = null;
         String tokName = "";
@@ -163,25 +166,25 @@ public class RecoveryService implements IService {
             // default to "KRA transport certificate" would require one to
             // change the nickname for existing KRA transport cert
             transportCertNick = config.getString("kra.cert.transport.nickname", "KRA transport certificate");
-            logger.debug("RecoveryService: serviceRequest: KRA transport cert nickname: " + transportCertNick);
-            logger.debug("RecoveryService: serviceRequest: token: " + tokName);
+            logger.debug("RecoveryService: - transport cert nickname: " + transportCertNick);
+            logger.debug("RecoveryService: - token: " + tokName);
             ct = CryptoUtil.getCryptoToken(tokName);
 
             allowEncDecrypt_recovery = config.getBoolean("kra.allowEncDecrypt.recovery", false);
 
             String isSSKeygenStr = request.getExtDataInString("isServerSideKeygen");
             if (isSSKeygenStr != null && isSSKeygenStr.equalsIgnoreCase("true")) {
-                logger.debug("RecoveryService: serviceRequest: isSSKengen=" + isSSKeygenStr);
+                logger.debug("RecoveryService: - server-side keygen: " + isSSKeygenStr);
                 isSSKeygen = true;
                 CryptoToken token = CryptoUtil.getKeyStorageToken("internal");
 
                 byte[] sessionWrappedPassphrase = request.getExtDataInByteArray("serverSideKeygenP12PasswdEnc");
                 if (sessionWrappedPassphrase == null) {
-                    throw new EBaseException(CMS.getUserMessage("CMS_BASE_CERT_ERROR" + "Server-Side Keygen Enroll Key Retrieval: sessionWrappedPassphrase not found in Request"));
+                    throw new EBaseException(CMS.getUserMessage("CMS_BASE_CERT_ERROR", "Server-Side Keygen Enroll Key Retrieval: sessionWrappedPassphrase not found in Request"));
                 }
                 byte[] transWrappedSessionKey = request.getExtDataInByteArray("serverSideKeygenP12PasswdTransSession");
                 if (transWrappedSessionKey == null) {
-                    throw new EBaseException(CMS.getUserMessage("CMS_BASE_CERT_ERROR" + "Server-Side Keygen Enroll Key Retrieval: transWrappedSessionKey not found in Request"));
+                    throw new EBaseException(CMS.getUserMessage("CMS_BASE_CERT_ERROR", "Server-Side Keygen Enroll Key Retrieval: transWrappedSessionKey not found in Request"));
                 }
 
                 // unwrap session key
@@ -189,8 +192,9 @@ public class RecoveryService implements IService {
                         cm.findCertByNickname(transportCertNick);
                 PrivateKey transPrivateKey =
                         cm.findPrivKeyByCert(transCert);
-                if (transPrivateKey != null)
-                    logger.debug("RecoveryService: serviceRequest: found private key");
+                if (transPrivateKey != null) {
+                    logger.debug("RecoveryService: Found private key");
+                }
 
                 // key size and alg must match with serverKeygenUserKeyDefault.java
 
@@ -206,8 +210,8 @@ public class RecoveryService implements IService {
                         wrapAlg);
 
                 if (unwrappedSessionKey == null) {
-                    logger.debug("RecoveryService: serviceRequest: unwrappedSessionKey null");
-                    throw new EBaseException(CMS.getUserMessage("CMS_BASE_CERT_ERROR" + "Server-Side Keygen Enroll Key Retrieval: CryptoUtil.unwrap failed on unwrappedSessionKey"));
+                    logger.debug("RecoveryService: Missing unwrapped session key");
+                    throw new EBaseException(CMS.getUserMessage("CMS_BASE_CERT_ERROR", "Server-Side Keygen Enroll Key Retrieval: CryptoUtil.unwrap failed on unwrappedSessionKey"));
                 }
 
                 // decrypt p12 passphrase
@@ -221,9 +225,11 @@ public class RecoveryService implements IService {
                 serverKeygenP12Pass = new String(passphrase, "UTF-8");
                 CryptoUtil.obscureBytes(passphrase, "random");
             }
+
         } catch (Exception e) {
-            logger.error("RecoveryService exception: use internal token: " + e, e);
+            logger.error("RecoveryService: Error: " + e, e);
             ct = cm.getInternalCryptoToken();
+
         } finally {
             // delete SSK items from request
             request.setExtData("serverSideKeygenP12PasswdTransSession", "");
@@ -231,16 +237,15 @@ public class RecoveryService implements IService {
             request.deleteExtData("serverSideKeygenP12PasswdTransSession");
             request.deleteExtData("serverSideKeygenP12PasswdEnc");
         }
+
         if (ct == null) {
-            throw new EBaseException(CMS.getUserMessage("CMS_BASE_CERT_ERROR" + "cannot get crypto token"));
+            throw new EBaseException(CMS.getUserMessage("CMS_BASE_CERT_ERROR", "cannot get crypto token"));
         }
 
         StatsSubsystem statsSub = (StatsSubsystem) engine.getSubsystem(StatsSubsystem.ID);
         if (statsSub != null) {
             statsSub.startTiming("recovery", true /* main action */);
         }
-
-        logger.info("KRA services recovery request");
 
         // byte publicKey[] = (byte[])request.get(ATTR_PUBLIC_KEY_DATA);
         // X500Name owner = (X500Name)request.get(ATTR_OWNER_NAME);
@@ -260,39 +265,42 @@ public class RecoveryService implements IService {
 
         // retrieve based on serial no
         BigInteger serialno = request.getExtDataInBigInteger(ATTR_SERIALNO);
-
-        logger.info("KRA reading key record; serialno=" + serialno.toString());
+        logger.info("RecoveryService: Reading key record " + new KeyId(serialno).toHexString());
 
         if (statsSub != null) {
             statsSub.startTiming("get_key");
         }
+
         KeyRecord keyRecord = mStorage.readKeyRecord(serialno);
         if (statsSub != null) {
             statsSub.endTiming("get_key");
         }
 
-        // see if the certificate matches the key
         byte pubData[] = keyRecord.getPublicKeyData();
+        logger.info("RecoveryService: - key record public key: " + pubData.length);
+
         // first check the cert expected from SSK
-        X509Certificate x509cert =
-                request.getExtDataInCert(REQUEST_ISSED_CERT);
+        X509Certificate x509cert = request.getExtDataInCert(REQUEST_ISSED_CERT);
         if (x509cert == null) {
-            x509cert =
-                    request.getExtDataInCert(ATTR_USER_CERT);
+            x509cert = request.getExtDataInCert(ATTR_USER_CERT);
             if (x509cert == null) {
                 throw new EKRAException(CMS.getUserMessage("CMS_KRA_INVALID_KEYRECORD"));
             }
         }
+
         byte inputPubData[] = x509cert.getPublicKey().getEncoded();
+        logger.info("RecoveryService: - request public key: " + inputPubData.length);
 
         if (inputPubData.length != pubData.length) {
-            logger.error(CMS.getLogMessage("CMSCORE_KRA_PUBLIC_KEY_LEN"));
+            logger.error("RecoveryService: " + CMS.getLogMessage("CMSCORE_KRA_PUBLIC_KEY_LEN"));
             throw new EKRAException(
                     CMS.getUserMessage("CMS_KRA_PUBLIC_KEY_NOT_MATCHED"));
         }
+
+        // see if the certificate matches the key
         for (int i = 0; i < pubData.length; i++) {
             if (pubData[i] != inputPubData[i]) {
-                logger.error(CMS.getLogMessage("CMSCORE_KRA_PUBLIC_KEY_LEN"));
+                logger.error("RecoveryService: " + CMS.getLogMessage("CMSCORE_KRA_PUBLIC_KEY_LEN"));
                 throw new EKRAException(
                         CMS.getUserMessage("CMS_KRA_PUBLIC_KEY_NOT_MATCHED"));
             }
@@ -301,7 +309,7 @@ public class RecoveryService implements IService {
         boolean isRSA = true;
         String keyAlg = x509cert.getPublicKey().getAlgorithm();
         if (keyAlg != null) {
-            logger.debug("RecoveryService: publicKey alg =" + keyAlg);
+            logger.debug("RecoveryService: - public key alg:" + keyAlg);
             if (!keyAlg.equals("RSA"))
                 isRSA = false;
         }
@@ -338,7 +346,7 @@ public class RecoveryService implements IService {
                 // verifyKeyPair() is RSA-centric
                 if (verifyKeyPair(pubData, privateKeyData) == false) {
                     jssSubsystem.obscureBytes(privateKeyData);
-                    logger.error(CMS.getLogMessage("CMSCORE_KRA_PUBLIC_NOT_FOUND"));
+                    logger.error("RecoveryService: " + CMS.getLogMessage("CMSCORE_KRA_PUBLIC_NOT_FOUND"));
                     throw new EKRAException(
                             CMS.getUserMessage("CMS_KRA_INVALID_PUBLIC_KEY"));
                 }
@@ -384,7 +392,7 @@ public class RecoveryService implements IService {
                         false,
                         keyRecord.getWrappingParams(mKRA.getStorageKeyUnit().getOldWrappingParams()));
             } catch (Exception e) {
-                throw new EBaseException("Failed to unwrap private key", e);
+                throw new EBaseException("Unable to unwrap private key: " + e.getMessage(), e);
             }
 
             if (statsSub != null) {
@@ -397,8 +405,8 @@ public class RecoveryService implements IService {
         }
 
         if (isSSKeygen) {
-            logger.debug("RecoveryService: putting p12 in request");
-            byte[] p12b = (byte[])params.get(ATTR_PKCS12);
+            logger.debug("RecoveryService: Storing PKCS #12 data into request");
+            byte[] p12b = (byte[]) params.get(ATTR_PKCS12);
             // IEnrollProfile.REQUEST_ISSUED_P12
             request.setExtData("req_issued_p12" /*ATTR_PKCS12*/, p12b);
 
@@ -414,13 +422,13 @@ public class RecoveryService implements IService {
              */
             boolean isArchival = request.getExtDataInBoolean(Request.SERVER_SIDE_KEYGEN_ENROLL_ENABLE_ARCHIVAL, true);
             if (isArchival) {
-                logger.debug("RecoveryService: serviceRequest: Server-Side Keygen isArchival true, key record kept");
+                logger.debug("RecoveryService: Server-Side Keygen isArchival true, key record kept");
             } else
                 mStorage.deleteKeyRecord(serialno);
-                logger.debug("RecoveryService: serviceRequest: Server-Side Keygen isArchival false, key record not kept");
+                logger.debug("RecoveryService: Server-Side Keygen isArchival false, key record not kept");
         }
 
-        logger.info("key " + serialno + " recovered");
+        logger.info("RecoveryService: Key " + new KeyId(serialno).toHexString() + " recovered");
 
         // for audit log
         String authMgr = AuditFormat.NOAUTH;
@@ -440,14 +448,14 @@ public class RecoveryService implements IService {
             }
         }
         logger.info(
-                AuditFormat.FORMAT,
+                "RecoveryService: " + AuditFormat.FORMAT,
                 Request.KEYRECOVERY_REQUEST,
                 request.getRequestId(),
                 initiative,
                 authMgr,
                 "completed",
                 ((X509CertImpl) x509cert).getSubjectName(),
-                "serial number: 0x" + serialno.toString(16)
+                "serial number: " + new KeyId(serialno).toHexString()
         );
 
         if (statsSub != null) {
