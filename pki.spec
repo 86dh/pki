@@ -2310,10 +2310,12 @@ fi
 # The <phase> is only available during development/stabilization. It should
 # not be included in GA/update releases.
 #
+# For example:
+# * Tue Mar 6 2018 Dogtag PKI Team <devel@lists.dogtagpki.org> 10.6.0-1
+# - Rebase to PKI 10.6.0
+#
 # To list all changes in <branch> since <tag>:
 # $ git log --pretty=oneline --abbrev-commit --no-decorate <tag>..<branch>
 
 %changelog
-* Tue Mar 6 2018 Dogtag PKI Team <devel@lists.dogtagpki.org> 10.6.0-1
-- Rebase to PKI 10.6.0
-
+%autochangelog
