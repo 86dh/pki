@@ -140,6 +140,8 @@ public class EnrollmentService implements IService {
     public boolean serviceRequest(Request request)
             throws EBaseException {
 
+        logger.info("EnrollmentServlet: Processing enrollment request");
+
         KRAEngine engine = KRAEngine.getInstance();
         JssSubsystem jssSubsystem = engine.getJSSSubsystem();
 
@@ -164,30 +166,27 @@ public class EnrollmentService implements IService {
         String auditPublicKey = ILogger.UNIDENTIFIED;
         RequestId requestId = request.getRequestId();
 
-        logger.debug("EnrollmentServlet: KRA services enrollment request");
-
         // the request record field delayLDAPCommit == "true" will cause
         // updateRequest() to delay actual write to ldap
         request.setExtData("delayLDAPCommit", "true");
 
         String transportCert = request.getExtDataInString(Request.REQUEST_TRANSPORT_CERT);
-        logger.info("EnrollmentServlet: request transport cert: " + transportCert);
+        logger.info("EnrollmentServlet: - request transport cert: " + transportCert);
         if (transportCert != null && transportCert.length() > 0) {
-            //logger.debug("EnrollmentService: serviceRequest: transportCert=" + transportCert);
-            logger.debug("EnrollmentService: serviceRequest: transportCert is in request");
+            //logger.debug("EnrollmentService: transportCert=" + transportCert);
+            logger.debug("EnrollmentService: Transport cert is in request");
             request.deleteExtData(Request.REQUEST_TRANSPORT_CERT);
         } else {
-            logger.warn("EnrollmentService: serviceRequest: Missing transport certificate");
+            logger.warn("EnrollmentService: Missing transport certificate");
         }
+
         org.mozilla.jss.crypto.X509Certificate tCert =  mTransportUnit.verifyCertificate(transportCert);
-        logger.debug("EnrollmentService: tCert=" + ((tCert != null)?tCert.getSerialNumber().toString()+":"+
+        logger.debug("EnrollmentService: - transport cert: " + ((tCert != null)?tCert.getSerialNumber().toString()+":"+
                    tCert.getSubjectDN().toString()+":":"Invalid transport certificate"));
 
         SessionContext sContext = SessionContext.getContext();
         String agentId = (String) sContext.get(SessionContext.USER_ID);
         AuthToken authToken = (AuthToken) sContext.get(SessionContext.AUTH_TOKEN);
-
-        logger.info("KRA services enrollment request");
 
         // unwrap user key with transport
         byte unwrapped[] = null;
@@ -195,6 +194,7 @@ public class EnrollmentService implements IService {
         PKIArchiveOptionsContainer aOpts[] = null;
 
         String profileId = request.getExtDataInString(Request.PROFILE_ID);
+        logger.info("EnrollmentService: - profile: " + profileId);
 
         if (profileId == null || profileId.equals("")) {
             try {
@@ -212,7 +212,7 @@ public class EnrollmentService implements IService {
                         e.toString(),
                         null));
 
-                logger.error("EnrollmentService: serviceRequest: CRMFParser.getPKIArchiveOptions() failed: " + e.toString());
+                logger.error("EnrollmentService: Unable to get PKIArchiveOptions: " + e.getMessage(), e);
                 throw new EKRAException(
                         CMS.getUserMessage("CMS_KRA_INVALID_PRIVATE_KEY") + ": " + e, e);
             }
@@ -232,6 +232,8 @@ public class EnrollmentService implements IService {
             ArchiveOptions opts = new ArchiveOptions(aOpts[i].mAO);
 
             if (allowEncDecrypt_archival == true) {
+                logger.info("EnrollmentService: Decrypting external private key");
+
                 if (tCert == null) {
                     logger.error("EnrollmentService: Invalid transport certificate: " + transportCert);
                     throw new EKRAException(CMS.getUserMessage("CMS_KRA_INVALID_TRANSPORT_CERT"));
@@ -239,9 +241,6 @@ public class EnrollmentService implements IService {
                 if (statsSub != null) {
                     statsSub.startTiming("decrypt_user_key");
                 }
-
-                logger.info("KRA decrypts external private");
-                logger.debug("EnrollmentService::about to decryptExternalPrivate");
 
                 try {
                     tmp_unwrapped = mTransportUnit.decryptExternalPrivate(
@@ -251,7 +250,8 @@ public class EnrollmentService implements IService {
                             opts.getEncValue(),
                             tCert);
                 } catch (Exception e) {
-                    logger.error(CMS.getLogMessage("CMSCORE_KRA_UNWRAP_USER_KEY"), e);
+                    logger.error("EnrollmentService: " + CMS.getLogMessage("CMSCORE_KRA_UNWRAP_USER_KEY"));
+                    logger.error("EnrollmentService: Unable to decrypt external private key: " + e.getMessage(), e);
 
                     auditor.log(SecurityDataArchivalProcessedEvent.createFailureEvent(
                             auditSubjectID,
@@ -262,14 +262,13 @@ public class EnrollmentService implements IService {
                             e.toString(),
                             null));
 
-                    logger.error("EnrollmentService: serviceRequest: mTransportUnit.decryptExternalPrivate() failed: "+ e.toString());
                     throw new EKRAException(
                             CMS.getUserMessage("CMS_KRA_INVALID_PRIVATE_KEY") + ": " + e, e);
                 }
                 if (statsSub != null) {
                     statsSub.endTiming("decrypt_user_key");
                 }
-                logger.debug("EnrollmentService::finished decryptExternalPrivate");
+                logger.debug("EnrollmentService: Decrypted external private key");
 
                 /* making sure leading 0's are removed */
                 int first = 0;
@@ -290,7 +289,7 @@ public class EnrollmentService implements IService {
 
             if (publicKeyData == null) {
                 String message = CMS.getLogMessage("CMSCORE_KRA_PUBLIC_NOT_FOUND");
-                logger.error(message);
+                logger.error("EnrollmentService: " + message);
 
                 auditor.log(SecurityDataArchivalProcessedEvent.createFailureEvent(
                         auditSubjectID,
@@ -306,19 +305,21 @@ public class EnrollmentService implements IService {
             }
 
             String keyAlg = publicKey.getAlgorithm();
-            logger.debug("EnrollmentService: algorithm of key to archive is: "+ keyAlg);
+            logger.debug("EnrollmentService: - algorithm of key to archive: "+ keyAlg);
 
             PublicKey pubkey = null;
             org.mozilla.jss.crypto.PrivateKey entityPrivKey = null;
             if ( allowEncDecrypt_archival == false) {
+                logger.info("EnrollmentService: Unwrapping external private key");
+
                 if (tCert == null) {
                     logger.error("EnrollmentService: Invalid transport certificate: " + transportCert);
                     throw new EKRAException(CMS.getUserMessage("CMS_KRA_INVALID_TRANSPORT_CERT"));
                 }
                 try {
-                    pubkey = X509Key.parsePublicKey (new DerValue(publicKeyData));
+                    pubkey = X509Key.parsePublicKey(new DerValue(publicKeyData));
                 } catch (Exception e) {
-                    logger.error("EnrollmentService: parsePublicKey:" + e.getMessage(), e);
+                    logger.error("EnrollmentService: Unable to parse public key:" + e.getMessage(), e);
                     throw new EKRAException(
                         CMS.getUserMessage("CMS_KRA_INVALID_PUBLIC_KEY"), e);
                 }
@@ -332,7 +333,8 @@ public class EnrollmentService implements IService {
                             pubkey,
                             tCert);
                 } catch (Exception e) {
-                    logger.error(CMS.getLogMessage("CMSCORE_KRA_WRAP_USER_KEY"), e);
+                    logger.error("EnrollmentService: " + CMS.getLogMessage("CMSCORE_KRA_WRAP_USER_KEY"));
+                    logger.error("EnrollmentService: Unable to unwrap external private key: "+ e.getMessage(), e);
 
                     auditor.log(SecurityDataArchivalProcessedEvent.createFailureEvent(
                             auditSubjectID,
@@ -343,9 +345,8 @@ public class EnrollmentService implements IService {
                             e.toString(),
                             null));
 
-                    logger.error("EnrollmentService: serviceRequest: mTransportUnit.unwrap() failed: "+ e.toString());
                     throw new EKRAException(
-                            CMS.getUserMessage("CMS_KRA_INVALID_PRIVATE_KEY") + ": " + e, e);
+                            CMS.getUserMessage("CMS_KRA_INVALID_PRIVATE_KEY") + ": " + e.getMessage(), e);
                 }
             } // !allowEncDecrypt_archival
 
@@ -359,7 +360,7 @@ public class EnrollmentService implements IService {
                     verifyKeyPair(publicKeyData, unwrapped);
 
                 } catch (Exception e) {
-                    logger.error("EnrollmentService: " + e.getMessage(), e);
+                    logger.error("EnrollmentService: Unable to validate key pair: " + e.getMessage(), e);
 
                     jssSubsystem.obscureBytes(unwrapped);
 
@@ -373,7 +374,7 @@ public class EnrollmentService implements IService {
                         null));
 
                     throw new EKRAException(
-                            CMS.getUserMessage("CMS_KRA_INVALID_PUBLIC_KEY") + ": " + e, e);
+                            CMS.getUserMessage("CMS_KRA_INVALID_PUBLIC_KEY") + ": " + e.getMessage(), e);
                 }
 
                 if (statsSub != null) {
@@ -389,7 +390,7 @@ public class EnrollmentService implements IService {
 
             if (owner == null) {
                 String message = CMS.getLogMessage("CMSCORE_KRA_OWNER_NAME_NOT_FOUND");
-                logger.error(message);
+                logger.error("EnrollmentService: " + message);
 
                 auditor.log(SecurityDataArchivalProcessedEvent.createFailureEvent(
                         auditSubjectID,
@@ -410,7 +411,6 @@ public class EnrollmentService implements IService {
             //                       encKey OCTET_STRING,
             //                    }
             //
-            logger.info("KRA encrypts internal private");
             if (statsSub != null) {
                 statsSub.startTiming("encrypt_user_key");
             }
@@ -419,14 +419,18 @@ public class EnrollmentService implements IService {
 
             try {
                 params = mStorageUnit.getWrappingParams(allowEncDecrypt_archival);
+
                 if (allowEncDecrypt_archival == true) {
+                    logger.info("EnrollmentService: Encrypting internal private key");
                     privateKeyData = mStorageUnit.encryptInternalPrivate(unwrapped, params);
                 } else {
+                    logger.info("EnrollmentService: Wrapping internal private key");
                     privateKeyData = mStorageUnit.wrap(entityPrivKey, params);
                 }
 
             } catch (Exception e) {
-                logger.error(CMS.getLogMessage("CMSCORE_KRA_WRAP_USER_KEY"), e);
+                logger.error("EnrollmentService: " + CMS.getLogMessage("CMSCORE_KRA_WRAP_USER_KEY"));
+                logger.error("EnrollmentService: Unable to encrypt/wrap internal private key: " + e.getMessage(), e);
 
                 auditor.log(SecurityDataArchivalProcessedEvent.createFailureEvent(
                         auditSubjectID,
@@ -437,7 +441,6 @@ public class EnrollmentService implements IService {
                         e.toString(),
                         null));
 
-                logger.error("EnrollmentService: serviceRequest: mStorageUnit encrypt or wrap call failed: "+ e.toString());
                 throw new EKRAException(
                         CMS.getUserMessage("CMS_KRA_INVALID_PRIVATE_KEY") + ": " + e, e);
 
@@ -471,7 +474,7 @@ public class EnrollmentService implements IService {
                         null));
 
                     throw new EKRAException(
-                            CMS.getUserMessage("CMS_KRA_INVALID_KEYRECORD") + ": " + e, e);
+                            CMS.getUserMessage("CMS_KRA_INVALID_KEYRECORD") + ": " + e.getMessage(), e);
                 }
             } else if (keyAlg.equals("EC")) {
 
@@ -495,22 +498,22 @@ public class EnrollmentService implements IService {
                         }
                     }
                 } catch (Exception e) {
-                    logger.warn("EnrollmentService: ASN1Util.getECCurveBytesByX509PublicKeyByte() throws exception: "+ e.getMessage(), e);
-                    logger.warn("EnrollmentService: exception alowed. continue");
+                    logger.warn("EnrollmentService: Unable to get EC curve by public key: " + e.getMessage(), e);
+                    // exception allowed -> continue
                 }
 
                 metaInfo.set(KeyRecordParser.OUT_KEY_EC_CURVE,
                     oidDescription);
 
                 rec.set(KeyRecord.ATTR_META_INFO, metaInfo);
-                // key size does not apply to EC;
+                // key size does not apply to EC
                 rec.setKeySize(-1);
             }
 
             // if record already has a serial number, yell out.
             if (rec.getSerialNumber() != null) {
                 String message = CMS.getLogMessage("CMSCORE_KRA_INVALID_SERIAL_NUMBER", rec.getSerialNumber().toString());
-                logger.error(message);
+                logger.error("EnrollmentService: " + message);
 
                 auditor.log(SecurityDataArchivalProcessedEvent.createFailureEvent(
                         auditSubjectID,
@@ -534,7 +537,7 @@ public class EnrollmentService implements IService {
             try {
                 rec.setWrappingParams(params, allowEncDecrypt_archival);
             } catch (Exception e) {
-                logger.error("Failed to store wrapping parameters", e);
+                logger.error("EnrollmentService: Unable to store wrapping parameters: " + e.getMessage(), e);
                 // TODO(alee) Set correct audit message here
                 auditor.log(SecurityDataArchivalProcessedEvent.createFailureEvent(
                         auditSubjectID,
@@ -554,7 +557,7 @@ public class EnrollmentService implements IService {
 
             if (serialNo == null) {
                 String message = CMS.getLogMessage("CMSCORE_KRA_GET_NEXT_SERIAL");
-                logger.error(message);
+                logger.error("EnrollmentService: " + message);
 
                 auditor.log(SecurityDataArchivalProcessedEvent.createFailureEvent(
                         auditSubjectID,
@@ -576,7 +579,8 @@ public class EnrollmentService implements IService {
                 request.setExtData(ATTR_KEY_RECORD + i, serialNo);
             }
 
-            logger.info("KRA adding key record " + serialNo);
+            KeyId keyID = new KeyId(serialNo);
+            logger.info("EnrollmentService: Adding key record " + keyID.toHexString());
 
             if (statsSub != null) {
                 statsSub.startTiming("store_key");
@@ -586,11 +590,8 @@ public class EnrollmentService implements IService {
                 statsSub.endTiming("store_key");
             }
 
-            logger.debug("EnrollmentService: key record 0x" + serialNo.toString(16)
-                        + " (" + owner + ") archived");
-
-            logger.info("key record 0x" +
-                    serialNo.toString(16)
+            logger.info("EnrollmentService: Key record " +
+                    keyID.toHexString()
                     + " (" + owner + ") archived");
 
             // for audit log
@@ -601,14 +602,14 @@ public class EnrollmentService implements IService {
                         authToken.getInString(AuthToken.TOKEN_AUTHMGR_INST_NAME);
             }
             logger.info(
-                    AuditFormat.FORMAT,
+                    "EnrollmentService: " + AuditFormat.FORMAT,
                     Request.KEYARCHIVAL_REQUEST,
                     request.getRequestId(),
                     AuditFormat.FROMAGENT + " agentID: " + agentId,
                     authMgr,
                     "completed",
                     owner,
-                    "serial number: 0x" + serialNo.toString(16)
+                    "serial number: " + keyID.toHexString()
             );
 
             auditPublicKey = auditPublicKey(rec);
@@ -663,7 +664,7 @@ public class EnrollmentService implements IService {
         request.setExtData("delayLDAPCommit", "false");
 
         // update request
-        logger.info("KRA updating request");
+        logger.info("EnrollmentService: Updating request");
         engine.getRequestRepository().updateRequest(request);
 
         if (statsSub != null) {
