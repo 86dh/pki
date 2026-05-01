@@ -337,9 +337,6 @@ class NSSDatabase:
             check=check,
             universal_newlines=text)
 
-        if capture_output:
-            logger.debug('stdout:\n%s', result.stdout)
-
         return result
 
     def create(self, enable_trust_policy=False):
@@ -1337,6 +1334,8 @@ class NSSDatabase:
         #   < 1> rsa      dcd6cbc1226ede02a961488553b01639ff981cdd someNickame
         #
         # The hex string is the hex-encoded CKA_ID
+        logger.debug('stdout:\n%s', out)
+
         return re.findall(br'^<\s*\d+>\s+\w+\s+(\w+)', out, re.MULTILINE)
 
     def __create_basic_constraints_ext(self, exts, basic_constraints_ext):
@@ -1949,6 +1948,8 @@ class NSSDatabase:
         stdout = result.stdout.decode()
         stderr = result.stderr.decode()
 
+        logger.debug('stdout:\n%s', stdout)
+
         if stderr:
             logger.error('stderr : %s', stderr)
 
@@ -1998,8 +1999,10 @@ class NSSDatabase:
 
             result = self.run(cmd, capture_output=True)
 
-            output = result.stdout
+            output = result.stdout.decode('ascii')
             error = result.stderr
+
+            logger.debug('stdout:\n%s', output)
 
             if error:
                 # certutil returned an error
@@ -2013,13 +2016,20 @@ class NSSDatabase:
             if result.returncode != 0:
                 logger.warning('certutil returned non-zero exit code (bug #1539996)')
 
-            print(output.decode('ascii'))
+            print(output)
 
         finally:
             shutil.rmtree(tmpdir)
 
     def get_cert(self, nickname, token=None, output_format='pem',
                  output_text=False):
+        '''
+        This method returns a PEM pert, a base64-encoded DER cert,
+        or a human-readable cert.
+
+        If output_format=base64 or output_text=True the return type
+        will be a Unicode string, otherwise it will be a binary string.
+        '''
 
         logger.debug('NSSDatabase.get_cert(%s) begins', nickname)
 
@@ -2104,6 +2114,13 @@ class NSSDatabase:
         if output_text and not isinstance(cert_data, str):
             # convert to text
             cert_data = cert_data.decode('ascii')
+
+        if isinstance(cert_data, str):
+            output = cert_data
+        else:
+            output = cert_data.decode('utf-8')
+
+        logger.debug('stdout:\n%s', output)
 
         logger.debug('NSSDatabase.get_cert(%s) ends', nickname)
 
