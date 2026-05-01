@@ -144,6 +144,13 @@ jobs:
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
 
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage SSLClient \
+              kra_storage
+
       - name: Check kra_transport cert in internal token
         run: |
           echo ",," > expected
@@ -154,6 +161,13 @@ jobs:
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
 
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage SSLClient \
+              kra_transport
+
       - name: Check kra_audit_signing cert in internal token
         run: |
           echo ",,P" > expected
@@ -163,6 +177,13 @@ jobs:
               kra_audit_signing | tee output
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
+
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage ObjectSigner \
+              kra_audit_signing
 
       - name: Check system certs in HSM
         run: |
@@ -188,6 +209,13 @@ jobs:
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
 
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage SSLClient \
+              HSM:kra_storage
+
       - name: Check kra_transport cert in HSM
         run: |
           echo "u,u,u" > expected
@@ -199,6 +227,13 @@ jobs:
               HSM:kra_transport | tee output
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
+
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage SSLClient \
+              HSM:kra_transport
 
       - name: Check kra_audit_signing cert in HSM
         run: |
@@ -212,10 +247,17 @@ jobs:
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
 
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage ObjectSigner \
+              HSM:kra_audit_signing
+
       - name: Run PKI healthcheck
         run: docker exec pki pki-healthcheck --failures-only
 
-      - name: Check KRA admin
+      - name: Check admin cert
         run: |
           docker exec pki pki-server cert-export ca_signing --cert-file ca_signing.crt
 
@@ -227,6 +269,11 @@ jobs:
           docker exec pki pki pkcs12-import \
               --pkcs12 /root/.dogtag/pki-tomcat/ca_admin_cert.p12 \
               --pkcs12-password Secret.123
+
+          docker exec pki pki nss-cert-verify \
+              --cert-usage SSLClient \
+              caadmin
+
           docker exec pki pki -n caadmin kra-user-show kraadmin
 
       - name: Remove KRA

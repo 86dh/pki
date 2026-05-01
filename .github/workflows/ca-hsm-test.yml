@@ -116,6 +116,13 @@ jobs:
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
 
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage SSLCA \
+              ca_signing
+
       - name: Check ca_ocsp_signing cert in internal token
         run: |
           echo ",," > expected
@@ -125,6 +132,13 @@ jobs:
               ca_ocsp_signing | tee output
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
+
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage StatusResponder \
+              ca_ocsp_signing
 
       - name: Check ca_audit_signing cert in internal token
         run: |
@@ -136,6 +150,13 @@ jobs:
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
 
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage ObjectSigner \
+              ca_audit_signing
+
       - name: Check subsystem cert in internal token
         run: |
           echo ",," > expected
@@ -146,6 +167,13 @@ jobs:
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
 
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage SSLClient \
+              subsystem
+
       - name: Check sslserver cert in internal token
         run: |
           echo "u,u,u" > expected
@@ -155,6 +183,13 @@ jobs:
               sslserver | tee output
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
+
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage SSLServer \
+              sslserver
 
       - name: Check system certs in HSM
         run: |
@@ -180,6 +215,13 @@ jobs:
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
 
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage SSLCA \
+              HSM:ca_signing
+
       - name: Check ca_ocsp_signing cert in HSM
         run: |
           echo "u,u,u" > expected
@@ -191,6 +233,13 @@ jobs:
               HSM:ca_ocsp_signing | tee output
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
+
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage StatusResponder \
+              HSM:ca_ocsp_signing
 
       - name: Check ca_audit_signing cert in HSM
         run: |
@@ -204,6 +253,13 @@ jobs:
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
 
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage ObjectSigner \
+              HSM:ca_audit_signing
+
       - name: Check subsystem cert in HSM
         run: |
           echo "u,u,u" > expected
@@ -215,6 +271,13 @@ jobs:
               HSM:subsystem | tee output
           sed -n 's/\s*Trust Flags:\s*\(\S\+\)\s*$/\1/p' output > actual
           diff expected actual
+
+          docker exec pki pki \
+              -d /var/lib/pki/pki-tomcat/conf/alias \
+              -f /var/lib/pki/pki-tomcat/conf/password.conf \
+              nss-cert-verify \
+              --cert-usage SSLClient \
+              HSM:subsystem
 
       - name: Run PKI healthcheck
         run: docker exec pki pki-healthcheck --failures-only
@@ -231,6 +294,11 @@ jobs:
           docker exec pki pki pkcs12-import \
               --pkcs12 /root/.dogtag/pki-tomcat/ca_admin_cert.p12 \
               --pkcs12-password Secret.123
+
+          docker exec pki pki nss-cert-verify \
+              --cert-usage SSLClient \
+              caadmin
+
           docker exec pki pki -n caadmin ca-user-show caadmin
 
       - name: Remove CA

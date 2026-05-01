@@ -464,8 +464,10 @@ jobs:
 
       - name: Check CA signing cert
         run: |
-          docker exec pki pki-server cert-export ca_signing \
-              --cert-file $SHARED/ca_signing.crt
+          docker exec pki pki-server cert-export \
+              --cert-file $SHARED/ca_signing.crt \
+              ca_signing
+
           docker exec pki openssl req -text -noout \
               -in /var/lib/pki/pki-tomcat/conf/certs/ca_signing.csr
 
@@ -473,29 +475,46 @@ jobs:
           docker exec pki /usr/share/pki/tests/ca/bin/test-ca-signing-cert-ext.sh \
               $SHARED/ca_signing.crt
 
+          docker exec pki pki-server cert-validate ca_signing
+
       - name: Check CA OCSP signing cert
         run: |
-          docker exec pki pki-server cert-export ca_ocsp_signing \
-              --cert-file ca_ocsp_signing.crt
+          docker exec pki pki-server cert-export \
+              --cert-file ca_ocsp_signing.crt \
+              ca_ocsp_signing
+
           docker exec pki openssl req -text -noout \
               -in /var/lib/pki/pki-tomcat/conf/certs/ca_ocsp_signing.csr
+
           docker exec pki openssl x509 -text -noout -in ca_ocsp_signing.crt
+
+          docker exec pki pki-server cert-validate  ca_ocsp_signing
 
       - name: Check subsystem cert
         run: |
-          docker exec pki pki-server cert-export subsystem \
-              --cert-file subsystem.crt
+          docker exec pki pki-server cert-export \
+              --cert-file subsystem.crt \
+              subsystem
+
           docker exec pki openssl req -text -noout \
               -in /var/lib/pki/pki-tomcat/conf/certs/subsystem.csr
+
           docker exec pki openssl x509 -text -noout -in subsystem.crt
+
+          docker exec pki pki-server cert-validate subsystem
 
       - name: Check SSL server cert
         run: |
-          docker exec pki pki-server cert-export sslserver \
-              --cert-file sslserver.crt
+          docker exec pki pki-server cert-export \
+              --cert-file sslserver.crt \
+              sslserver
+
           docker exec pki openssl req -text -noout \
               -in /var/lib/pki/pki-tomcat/conf/certs/sslserver.csr
+
           docker exec pki openssl x509 -text -noout -in sslserver.crt
+
+          docker exec pki pki-server cert-validate sslserver
 
       - name: Check CA admin cert
         run: |
@@ -528,6 +547,10 @@ jobs:
           docker exec pki pki pkcs12-import \
               --pkcs12 /root/.dogtag/pki-tomcat/ca_admin_cert.p12 \
               --pkcs12-password Secret.123
+
+          docker exec pki pki nss-cert-verify \
+              --cert-usage SSLClient \
+              caadmin
 
       - name: Enable audit log signing
         run: |

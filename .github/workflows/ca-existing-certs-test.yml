@@ -74,6 +74,10 @@ jobs:
               nss-key-find \
               --nickname ca_signing | tee ca_signing.key.before
 
+          docker exec pki pki nss-cert-verify \
+              --cert-usage SSLCA \
+              ca_signing
+
       - name: Create CA OCSP signing cert
         run: |
           docker exec pki pki \
@@ -101,6 +105,10 @@ jobs:
           docker exec pki pki \
               nss-key-find \
               --nickname ca_ocsp_signing | tee ca_ocsp_signing.key.before
+
+          docker exec pki pki nss-cert-verify \
+              --cert-usage StatusResponder \
+              ca_ocsp_signing
 
       - name: Create CA audit signing cert
         run: |
@@ -131,6 +139,10 @@ jobs:
               nss-key-find \
               --nickname ca_audit_signing | tee ca_audit_signing.key.before
 
+          docker exec pki pki nss-cert-verify \
+              --cert-usage ObjectSigner \
+              ca_audit_signing
+
       - name: Create subsystem cert
         run: |
           docker exec pki pki \
@@ -159,6 +171,10 @@ jobs:
               nss-key-find \
               --nickname subsystem | tee subsystem.key.before
 
+          docker exec pki pki nss-cert-verify \
+              --cert-usage SSLClient \
+              subsystem
+
       - name: Create SSL server cert
         run: |
           docker exec pki pki \
@@ -186,6 +202,10 @@ jobs:
           docker exec pki pki \
               nss-key-find \
               --nickname sslserver | tee sslserver.key.before
+
+          docker exec pki pki nss-cert-verify \
+              --cert-usage SSLServer \
+              sslserver
 
       - name: Export system certs
         run: |
