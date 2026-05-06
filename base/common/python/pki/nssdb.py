@@ -2216,7 +2216,13 @@ class NSSDatabase:
                 fullname = nickname
             cmd.append(fullname)
 
-        self.run(cmd, input=cert_data, text=True, check=True, runas=True)
+        self.run(
+            cmd,
+            input=cert_data,
+            text=True,
+            check=True,
+            capture_output=True,
+            runas=True)
 
     @staticmethod
     def convert_time_to_millis(date):

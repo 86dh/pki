@@ -428,47 +428,23 @@ class PKISubsystem(object):
 
         nickname = cert['nickname']
         token = pki.nssdb.normalize_token(cert['token'])
-
-        if token:
-            fullname = token + ':' + nickname
-        else:
-            fullname = nickname
-
         cert_usage = cert['certusage']
 
-        cmd = [
-            'pki',
-            '-d', self.instance.nssdb_dir,
-            '-f', self.instance.password_conf
-        ]
-
-        if token:
-            cmd.extend(['--token', token])
-
-        cmd.extend([
-            'nss-cert-verify',
-            '--cert-usage', cert_usage,
-            fullname
-        ])
-
-        logger.debug('Command: %s', ' '.join(cmd))
-
-        # don't use capture_output and text params to support Python 3.6
-        # https://stackoverflow.com/questions/53209127/subprocess-unexpected-keyword-argument-capture-output/53209196
-        # https://stackoverflow.com/questions/52663518/python-subprocess-popen-doesnt-take-text-argument
-
+        nssdb = self.instance.open_nssdb()
         try:
-            subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                check=True,
-                universal_newlines=True)
+            nssdb.verify_cert(
+                nickname,
+                token=token,
+                cert_usage=cert_usage)
 
             logger.debug('%s certificate is valid', tag)
 
         except subprocess.CalledProcessError as e:
-            logger.error('Unable to validate %s certificate: %s', tag, e.stdout)
+            logger.error('Unable to validate %s certificate: %s', tag, e.stderr)
             raise
+
+        finally:
+            nssdb.close()
 
     def export_system_cert(
             self,
